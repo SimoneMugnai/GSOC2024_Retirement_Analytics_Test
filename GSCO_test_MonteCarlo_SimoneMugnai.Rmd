@@ -1,0 +1,108 @@
+---
+title: "GSOC_2024_Test_MonteCarlo"
+author: "Simone Mugnai"
+date: "2024-02-29"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Library
+
+```{r}
+library(PortfolioAnalytics)
+library(PerformanceAnalytics)
+library(xts)
+library(profvis)
+
+```
+
+## Synthetic Data Generation
+Generate a synthetic time series dataset to apply the bootstrap method.
+
+```{r}
+# Set seed for reproducibility
+set.seed(123)
+
+# Generate synthetic data
+dates <- seq(as.Date("2020-01-01"), by = "day", length.out = 100)
+dataMatrix <- matrix(rnorm(300, mean = 100, sd = 10), ncol = 3, nrow = 100)
+
+# Create the xts object
+xtsData <- xts(dataMatrix, order.by = dates)
+
+```
+
+
+## Multi-Variable Block Bootstrap Function
+Define the function to perform multi-variable block bootstrap on the xts object.
+
+```{r}
+multiVariableBlockBootstrap <- function(data, B, blockSizeRange = c(5, 20), noiseScale = 0.1) {
+  bootstrapResults <- list()
+  n <- nrow(data)
+  
+  for (b in 1:B) {
+    # Randomize block size within specified range
+    blockSize <- sample(blockSizeRange[1]:blockSizeRange[2], 1)
+    
+    # Initialize an empty list to temporarily hold blocks
+    blocks <- list()
+    
+    totalRows <- 0
+    while (totalRows < n) {
+      # Randomly select a block start point
+      startIdx <- sample(1:(n-blockSize), 1)
+      block <- data[startIdx:(startIdx+blockSize-1), ]
+      
+      # Add the block to the list
+      blocks <- c(blocks, list(block))
+      totalRows <- totalRows + nrow(block)
+      
+      # If the total rows exceed the original data's length, break the loop
+      if (totalRows >= n) break
+    }
+    
+    # Combine all blocks into one xts object
+    bootstrapSample <- do.call(rbind, blocks)
+    
+    # If the bootstrap sample exceeds original length, trim it
+    if (nrow(bootstrapSample) > n) {
+      bootstrapSample <- bootstrapSample[1:n, ]
+    }
+    
+    # Add random noise to the bootstrap sample
+    noise <- matrix(rnorm(n * ncol(data), mean = 0, sd = noiseScale), nrow = n, ncol = ncol(data))
+    bootstrapSample <- xts(as.matrix(bootstrapSample) + noise, order.by=index(bootstrapSample))
+    
+    # Store the bootstrap sample
+    bootstrapResults[[b]] <- bootstrapSample
+  }
+  
+  return(bootstrapResults)
+}
+
+```
+
+## Application and Results
+Apply the bootstrap function to the synthetic xts data and examine the structure of the results.
+
+
+```{r}
+profvis({
+# Apply the block bootstrap function
+bootstrapResults <- multiVariableBlockBootstrap(xtsData, B = 10, blockSizeRange = c(5, 20), noiseScale = 0.1)
+
+# Display the structure of the bootstrap results
+str(bootstrapResults)
+
+
+# Iterate over each bootstrap sample and display the first 5 observations for each block
+lapply(bootstrapResults, function(x) head(x, 5))
+})
+```
+
